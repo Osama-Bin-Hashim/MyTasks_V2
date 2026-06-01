@@ -15,20 +15,23 @@ import com.example.mytasks.Adapters.RosterAdapter;
 import com.example.mytasks.AppDatabase;
 import com.example.mytasks.Models.RosterStats;
 import com.example.mytasks.Project;
+import com.example.mytasks.ProjectRepository;
 import com.example.mytasks.R;
 import com.example.mytasks.Task;
+import com.example.mytasks.TaskRepository;
 import com.example.mytasks.User;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class ManagerPerformanceActivity extends AppCompatActivity implements RosterAdapter.OnRemoveMemberListener {
     
     private int activeProjectId;
     private Project activeProject;
     private RosterAdapter rosterAdapter;
+    private ProjectRepository projectRepository;
+    private TaskRepository taskRepository;
     private boolean isManager;
     
     @Override
@@ -45,6 +48,8 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
         }
 
         activeProjectId = getIntent().getIntExtra("PROJECT_ID", -1);
+        projectRepository = new ProjectRepository(this);
+        taskRepository = new TaskRepository(this);
         
         // PERSISTENT USER GREETING
         SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
@@ -79,40 +84,76 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
     }
 
     private void executeMemberRemoval(String username) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            if (activeProject != null && activeProject.projectRoster != null) {
-                // SECURITY_AUDIT
-                SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
-                String managerName = pref.getString("LOGGED_IN_USERNAME", "Unknown");
-                Log.d("SECURITY_AUDIT", "Manager " + managerName + " removing user " + username + " from Project ID: " + activeProjectId);
+        if (activeProject != null && activeProject.projectRoster != null) {
+            // SECURITY_AUDIT
+            SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
+            String managerName = pref.getString("LOGGED_IN_USERNAME", "Unknown");
+            Log.d("SECURITY_AUDIT", "Manager " + managerName + " removing user " + username + " from Project ID: " + activeProjectId);
 
-                // 1. Remove from Roster
-                List<String> rosterList = new ArrayList<>(Arrays.asList(activeProject.projectRoster.split(", ")));
-                rosterList.remove(username);
-                activeProject.projectRoster = String.join(", ", rosterList);
-                db.projectDao().updateProject(activeProject);
+            // 1. Remove from Roster
+            List<String> rosterList = new ArrayList<>(Arrays.asList(activeProject.projectRoster.split(", ")));
+            rosterList.remove(username);
+            activeProject.projectRoster = String.join(", ", rosterList);
+            
+            projectRepository.updateProject(activeProject, new ProjectRepository.DataSyncCallback<Project>() {
+                @Override
+                public void onSuccess(Project data) {
+                    // 2. Unassign from Tasks (Note: we should ideally sync this too, but for now local)
+                    AppDatabase db = AppDatabase.getInstance(ManagerPerformanceActivity.this);
+                    AppDatabase.databaseWriteExecutor.execute(() -> {
+                        List<Task> tasks = db.taskDao().getTasksByProject(activeProjectId);
+                        for (Task task : tasks) {
+                            if (task.assigneeId != null && task.assigneeId.contains(username)) {
+                                List<String> assignees = new ArrayList<>(Arrays.asList(task.assigneeId.split(", ")));
+                                assignees.remove(username);
+                                task.assigneeId = String.join(", ", assignees);
+                                db.taskDao().updateTask(task);
 
-                // 2. Unassign from Tasks
-                List<Task> tasks = db.taskDao().getTasksByProject(activeProjectId);
-                for (Task task : tasks) {
-                    if (task.assigneeId != null && task.assigneeId.contains(username)) {
-                        List<String> assignees = new ArrayList<>(Arrays.asList(task.assigneeId.split(", ")));
-                        assignees.remove(username);
-                        task.assigneeId = String.join(", ", assignees);
-                        db.taskDao().updateTask(task);
-                    }
+                                // REPLICATION GATE: Sync assignee changes to server
+                                taskRepository.updateTask(task, new TaskRepository.DataSyncCallback<Task>() {
+                                    @Override
+                                    public void onSuccess(Task data) {
+                                        Log.d("SYNC", "Task assignee updated on server for task ID: " + task.id);
+                                    }
+
+                                    @Override
+                                    public void onFailure(String error) {
+                                        Log.e("SYNC", "Failed to sync task update: " + error);
+                                    }
+                                });
+                            }
+                        }
+                        runOnUiThread(() -> {
+                            Toast.makeText(ManagerPerformanceActivity.this, "Employee removed successfully", Toast.LENGTH_SHORT).show();
+                            loadProjectAnalytics(activeProjectId);
+                        });
+                    });
                 }
 
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Employee removed successfully", Toast.LENGTH_SHORT).show();
-                    loadProjectAnalytics(activeProjectId);
-                });
+                @Override
+                public void onFailure(String error) {
+                    runOnUiThread(() -> Toast.makeText(ManagerPerformanceActivity.this, "Removal failed: " + error, Toast.LENGTH_SHORT).show());
+                }
+            });
+        }
+    }
+
+    private void loadProjectAnalytics(int projectId) {
+        taskRepository.syncTasks(projectId, new TaskRepository.DataSyncCallback<List<Task>>() {
+            @Override
+            public void onSuccess(List<Task> data) {
+                calculateAndDisplayAnalytics(projectId);
+            }
+
+            @Override
+            public void onFailure(String error) {
+                // Fallback to local data on sync failure
+                calculateAndDisplayAnalytics(projectId);
             }
         });
     }
 
-    private void loadProjectAnalytics(int projectId) {
+    private void calculateAndDisplayAnalytics(int projectId) {
         AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
             // 0. Fetch Project for Roster
@@ -208,12 +249,20 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
                 currentRoster += username;
                 activeProject.projectRoster = currentRoster;
 
-                db.projectDao().updateProject(activeProject);
-                
-                runOnUiThread(() -> {
-                    Toast.makeText(this, username + " enrolled successfully!", Toast.LENGTH_SHORT).show();
-                    ((EditText)findViewById(R.id.inputNewMemberUsername)).setText("");
-                    loadProjectAnalytics(activeProjectId);
+                projectRepository.updateProject(activeProject, new ProjectRepository.DataSyncCallback<Project>() {
+                    @Override
+                    public void onSuccess(Project data) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(ManagerPerformanceActivity.this, username + " enrolled successfully!", Toast.LENGTH_SHORT).show();
+                            ((EditText)findViewById(R.id.inputNewMemberUsername)).setText("");
+                            loadProjectAnalytics(activeProjectId);
+                        });
+                    }
+
+                    @Override
+                    public void onFailure(String error) {
+                        runOnUiThread(() -> Toast.makeText(ManagerPerformanceActivity.this, "Enrollment failed: " + error, Toast.LENGTH_SHORT).show());
+                    }
                 });
             }
         });

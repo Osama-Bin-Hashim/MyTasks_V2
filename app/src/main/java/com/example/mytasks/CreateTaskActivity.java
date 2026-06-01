@@ -16,6 +16,7 @@ import java.util.Locale;
 
 public class CreateTaskActivity extends AppCompatActivity {
     private ActivityCreateTaskBinding binding;
+    private TaskRepository taskRepository;
     private List<User> userList = new ArrayList<>();
     private final String[] priorityOptions = {"1 - Critical", "2 - High", "3 - Medium", "4 - Low"};
     
@@ -37,6 +38,8 @@ public class CreateTaskActivity extends AppCompatActivity {
         int projectId = getIntent().getIntExtra("PROJECT_ID", -1);
         isEditMode = getIntent().getBooleanExtra("IS_EDIT_MODE", false);
         editingTaskId = getIntent().getIntExtra("TASK_ID", -1);
+
+        taskRepository = new TaskRepository(this);
 
         // SECURITY SHIELD: Enforce Manager-only access
         boolean isManager = getIntent().getBooleanExtra("IS_MANAGER", false);
@@ -228,26 +231,38 @@ public class CreateTaskActivity extends AppCompatActivity {
         taskToSave.priority = priority;
         taskToSave.timeLimitMillis = selectedDeadlineMillis;
 
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            if (isEditMode) {
-                db.taskDao().updateTask(taskToSave);
-            } else {
-                taskToSave.isRead = false; // Mark as unread for assignee
-                db.taskDao().insertTask(taskToSave);
-                
-                // Fire local notification (mocking real-time for same-device demo)
-                runOnUiThread(() -> {
-                    NotificationHelper.showNotification(this, "New Task Assigned!", 
-                        "You have been assigned: " + taskToSave.title);
-                });
-            }
-            runOnUiThread(() -> {
-                Toast.makeText(CreateTaskActivity.this, 
-                    isEditMode ? "Task Updated Successfully!" : "Task Created Successfully!", 
-                    Toast.LENGTH_SHORT).show();
-                finish();
+        if (isEditMode) {
+            taskRepository.updateTask(taskToSave, new TaskRepository.DataSyncCallback<Task>() {
+                @Override
+                public void onSuccess(Task data) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(CreateTaskActivity.this, "Task Updated Successfully!", Toast.LENGTH_SHORT).show();
+                        finish();
+                    });
+                }
+
+                @Override
+                public void onFailure(String error) {
+                    runOnUiThread(() -> Toast.makeText(CreateTaskActivity.this, "Update failed: " + error, Toast.LENGTH_SHORT).show());
+                }
             });
-        });
+        } else {
+            taskToSave.isRead = false;
+            taskRepository.saveTask(taskToSave, new TaskRepository.DataSyncCallback<Task>() {
+                @Override
+                public void onSuccess(Task data) {
+                    runOnUiThread(() -> {
+                        NotificationHelper.showNotification(CreateTaskActivity.this, "New Task Assigned!", "You have been assigned: " + data.title);
+                        Toast.makeText(CreateTaskActivity.this, "Task Created Successfully!", Toast.LENGTH_SHORT).show();
+                        finish();
+                    });
+                }
+
+                @Override
+                public void onFailure(String error) {
+                    runOnUiThread(() -> Toast.makeText(CreateTaskActivity.this, "Creation failed: " + error, Toast.LENGTH_SHORT).show());
+                }
+            });
+        }
     }
 }

@@ -8,7 +8,7 @@ import java.util.List;
 
 @Dao
 public interface UserDao {
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertUser(User user);
 
     @Query("SELECT * FROM users WHERE username = :username LIMIT 1")

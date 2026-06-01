@@ -17,8 +17,13 @@ import com.example.mytasks.AppDatabase;
 import com.example.mytasks.NotificationHelper;
 import com.example.mytasks.Project;
 import com.example.mytasks.Request;
+import com.example.mytasks.RequestRepository;
 import com.example.mytasks.User;
 import com.example.mytasks.databinding.ActivityRequestsBinding;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +33,7 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
 
     private ActivityRequestsBinding binding;
     private RequestsAdapter adapter;
+    private RequestRepository requestRepository;
     private int currentUserId;
     private String currentUsername;
     private boolean isManager;
@@ -47,6 +53,8 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
         
         isManager = getIntent().getBooleanExtra("IS_MANAGER", false);
         projectId = getIntent().getIntExtra("PROJECT_ID", -1);
+
+        requestRepository = new RequestRepository(this);
 
         loadProjectAndRequests();
 
@@ -88,29 +96,51 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
     private void loadRequests() {
         if (currentProject == null) return;
         
+        requestRepository.syncRequests(projectId, new RequestRepository.DataSyncCallback<List<Request>>() {
+            @Override
+            public void onSuccess(List<Request> requests) {
+                binding.tvConnWarning.setVisibility(View.GONE);
+                runOnUiThread(() -> displayFilteredRequests(requests));
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> {
+                    binding.tvConnWarning.setVisibility(View.VISIBLE);
+                    Toast.makeText(RequestsActivity.this, "Sync Error: " + error + ". Using cached data.", Toast.LENGTH_LONG).show();
+                    fetchLocalRequests();
+                });
+            }
+        });
+    }
+
+    private void fetchLocalRequests() {
         AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
-            List<Request> allProjectRequests = db.requestDao().getRequestsByProject(projectId);
+            List<Request> local = db.requestDao().getRequestsByProject(projectId);
+            runOnUiThread(() -> displayFilteredRequests(local));
+        });
+    }
+
+    private void displayFilteredRequests(List<Request> allProjectRequests) {
+        AppDatabase db = AppDatabase.getInstance(this);
+        AppDatabase.databaseWriteExecutor.execute(() -> {
             List<Request> filteredRequests = new ArrayList<>();
-            
-            if (allProjectRequests == null) allProjectRequests = new ArrayList<>();
+            if (allProjectRequests == null) return;
 
             for (Request req : allProjectRequests) {
-                // Point 2 & 3: Simplified logic with null safety
                 if ("DIRECT_TO_MANAGER".equals(req.type)) {
                     if (currentUserId == req.senderId || isManager) {
                         filteredRequests.add(req);
-                        // Mark as read if receiving
                         if (!req.isRead && ((isManager && req.senderId != currentUserId) || req.receiverId == currentUserId)) {
                             req.isRead = true;
                             db.requestDao().updateRequest(req);
                         }
                     }
                 } 
-                else if ("PEER_TO_PEER".equals(req.type)) {
+                else if ("PEER_TO_PEER".equals(req.type) || "MANAGER_TO_EMPLOYEE".equals(req.type)) {
                     if (currentUserId == req.senderId || currentUserId == req.receiverId || isManager) {
                         filteredRequests.add(req);
-                        // Mark as read if receiving
                         if (!req.isRead && (req.receiverId == currentUserId || (isManager && req.senderId != currentUserId))) {
                             req.isRead = true;
                             db.requestDao().updateRequest(req);
@@ -199,6 +229,7 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
 
     private void sendRequest(String recipient, String message) {
         Log.d("REQ_DEBUG", "Send clicked. Recipient: " + recipient + ", Manager Mode: " + isManager);
+        
         AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
             int receiverId;
@@ -210,7 +241,6 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
             } else {
                 User user = db.userDao().getUserByUsername(recipient);
                 receiverId = (user != null) ? user.id : -1;
-                // If Manager is sending to Employee, label it correctly
                 type = isManager ? "MANAGER_TO_EMPLOYEE" : "PEER_TO_PEER";
             }
 
@@ -226,43 +256,71 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
                 System.currentTimeMillis()
             );
 
-            db.requestDao().insertRequest(newRequest);
-            loadRequests();
-            runOnUiThread(() -> {
-                Toast.makeText(this, "Message Sent", Toast.LENGTH_SHORT).show();
-                NotificationHelper.showNotification(this, "Message Sent!", 
-                    "To: " + recipient);
+            requestRepository.sendRequest(newRequest, new RequestRepository.DataSyncCallback<Request>() {
+                @Override
+                public void onSuccess(Request data) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(RequestsActivity.this, "Message Sent Successfully", Toast.LENGTH_SHORT).show();
+                        NotificationHelper.showNotification(RequestsActivity.this, "Message Sent!", "To: " + recipient);
+                        loadRequests();
+                    });
+                }
+
+                @Override
+                public void onFailure(String error) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(RequestsActivity.this, "Sync Failed: " + error + ". Message saved locally.", Toast.LENGTH_LONG).show();
+                        loadRequests();
+                    });
+                }
             });
         });
     }
 
     @Override
     public void onApprove(Request request) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            // SECURITY_AUDIT
-            Log.d("SECURITY_AUDIT", "Request APPROVED. ID: " + request.requestId + " by User ID: " + currentUserId);
+        // SECURITY_AUDIT
+        Log.d("SECURITY_AUDIT", "Request APPROVED. ID: " + request.requestId + " by User ID: " + currentUserId);
 
-            request.status = "APPROVED";
-            db.requestDao().updateRequest(request);
-
-            // Trigger Backend Action
-            if ("JOIN_PROJECT".equals(request.type)) {
-                Project project = db.projectDao().getProjectById(request.projectId);
-                if (project != null) {
-                    String roster = project.projectRoster;
-                    if (roster == null) roster = "";
-                    if (!roster.contains(request.senderName)) {
-                        if (!roster.isEmpty()) roster += ", ";
-                        roster += request.senderName;
-                        project.projectRoster = roster;
-                        db.projectDao().updateProject(project);
-                    }
+        request.status = "APPROVED";
+        requestRepository.updateRequest(request, new RequestRepository.DataSyncCallback<Request>() {
+            @Override
+            public void onSuccess(Request updatedRequest) {
+                // Trigger Backend Action (e.g. Join Project)
+                if ("JOIN_PROJECT".equals(updatedRequest.type)) {
+                    processJoinProject(updatedRequest);
+                } else {
+                    runOnUiThread(() -> {
+                        Toast.makeText(RequestsActivity.this, "Request Approved", Toast.LENGTH_SHORT).show();
+                        loadRequests();
+                    });
                 }
             }
 
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(RequestsActivity.this, "Failed to sync approval: " + error, Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void processJoinProject(Request request) {
+        AppDatabase db = AppDatabase.getInstance(this);
+        AppDatabase.databaseWriteExecutor.execute(() -> {
+            Project project = db.projectDao().getProjectById(request.projectId);
+            if (project != null) {
+                String roster = project.projectRoster;
+                if (roster == null) roster = "";
+                if (!roster.contains(request.senderName)) {
+                    if (!roster.isEmpty()) roster += ", ";
+                    roster += request.senderName;
+                    project.projectRoster = roster;
+                    // Ideally you'd have a ProjectRepository.updateProject too
+                    db.projectDao().updateProject(project);
+                }
+            }
             runOnUiThread(() -> {
-                Toast.makeText(this, "Request Approved", Toast.LENGTH_SHORT).show();
+                Toast.makeText(RequestsActivity.this, "Request Approved & User added to Roster", Toast.LENGTH_SHORT).show();
                 loadRequests();
             });
         });
@@ -270,18 +328,23 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
 
     @Override
     public void onReject(Request request) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            // SECURITY_AUDIT
-            Log.d("SECURITY_AUDIT", "Request REJECTED. ID: " + request.requestId + " by User ID: " + currentUserId);
+        // SECURITY_AUDIT
+        Log.d("SECURITY_AUDIT", "Request REJECTED. ID: " + request.requestId + " by User ID: " + currentUserId);
 
-            request.status = "REJECTED";
-            db.requestDao().updateRequest(request);
+        request.status = "REJECTED";
+        requestRepository.updateRequest(request, new RequestRepository.DataSyncCallback<Request>() {
+            @Override
+            public void onSuccess(Request data) {
+                runOnUiThread(() -> {
+                    Toast.makeText(RequestsActivity.this, "Request Rejected", Toast.LENGTH_SHORT).show();
+                    loadRequests();
+                });
+            }
 
-            runOnUiThread(() -> {
-                Toast.makeText(this, "Request Rejected", Toast.LENGTH_SHORT).show();
-                loadRequests();
-            });
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(RequestsActivity.this, "Failed to sync rejection: " + error, Toast.LENGTH_SHORT).show());
+            }
         });
     }
 

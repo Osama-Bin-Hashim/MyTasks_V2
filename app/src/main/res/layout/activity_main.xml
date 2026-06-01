@@ -8,6 +8,19 @@
     android:background="#F5F6FA"
     tools:context=".Activities.MainActivity">
 
+    <TextView
+        android:id="@+id/tvConnWarningMain"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/red"
+        android:padding="8dp"
+        android:text="⚠️ Cannot connect to server. Log out to update IP."
+        android:textAlignment="center"
+        android:textColor="@color/white"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <!-- TOP PROJECT SWITCHER CONTAINER -->
     <androidx.cardview.widget.CardView
         android:id="@+id/projectCard"
@@ -17,7 +30,7 @@
         app:cardBackgroundColor="#FFFFFF"
         app:cardCornerRadius="@dimen/_16sdp"
         app:cardElevation="@dimen/_12sdp"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/tvConnWarningMain">
 
         <LinearLayout
             android:layout_width="match_parent"

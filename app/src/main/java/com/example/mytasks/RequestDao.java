@@ -31,4 +31,7 @@ public interface RequestDao {
 
     @androidx.room.Delete
     void deleteRequest(Request request);
+
+    @Query("DELETE FROM requests WHERE projectId = :projectId")
+    void deleteRequestsByProject(int projectId);
 }

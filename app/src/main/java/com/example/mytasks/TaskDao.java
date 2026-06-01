@@ -11,9 +11,9 @@ import java.util.List;
 public interface TaskDao {
 
     /**
-     * Requirement: Use ABORT to ensure data integrity during task creation.
+     * Requirement: Use REPLACE to prevent synchronization collisions.
      */
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertTask(Task task);
 
     @Update
@@ -57,4 +57,10 @@ public interface TaskDao {
 
     @Query("UPDATE tasks SET isRead = 1 WHERE projectId = :projectId AND assigneeId LIKE '%' || :username || '%'")
     void markTasksAsRead(int projectId, String username);
+
+    @Query("DELETE FROM tasks WHERE projectId = :projectId")
+    void deleteTasksByProject(int projectId);
+
+    @Query("DELETE FROM tasks")
+    void deleteAllTasks();
 }

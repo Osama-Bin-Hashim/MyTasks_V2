@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey;
  */
 @Entity(tableName = "requests")
 public class Request {
-    @PrimaryKey(autoGenerate = true)
+    @PrimaryKey
     public int requestId;
 
     public int senderId;

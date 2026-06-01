@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsCompat;
 
 import com.example.mytasks.AppDatabase;
 import com.example.mytasks.Project;
+import com.example.mytasks.ProjectRepository;
 import com.example.mytasks.User;
 import com.example.mytasks.databinding.ActivityCreateProjectBinding;
 
@@ -19,6 +20,7 @@ import java.util.List;
 public class CreateProjectActivity extends AppCompatActivity {
 
     private ActivityCreateProjectBinding binding;
+    private ProjectRepository projectRepository;
     private int currentUserId = -1;
 
     @Override
@@ -26,6 +28,8 @@ public class CreateProjectActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityCreateProjectBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+
+        projectRepository = new ProjectRepository(this);
 
         EdgeToEdge.enable(this);
         ViewCompat.setOnApplyWindowInsetsListener(binding.main, (v, insets) -> {
@@ -66,15 +70,20 @@ public class CreateProjectActivity extends AppCompatActivity {
     }
 
     private void saveProject(String name) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            Project newProject = new Project(name, currentUserId);
-            db.projectDao().insertProject(newProject);
-            
-            runOnUiThread(() -> {
-                Toast.makeText(CreateProjectActivity.this, "Project Created successfully!", Toast.LENGTH_SHORT).show();
-                finish();
-            });
+        Project newProject = new Project(name, currentUserId);
+        projectRepository.createProject(newProject, new ProjectRepository.DataSyncCallback<Project>() {
+            @Override
+            public void onSuccess(Project data) {
+                runOnUiThread(() -> {
+                    Toast.makeText(CreateProjectActivity.this, "Project Created successfully!", Toast.LENGTH_SHORT).show();
+                    finish();
+                });
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(CreateProjectActivity.this, "Failed to sync project: " + error, Toast.LENGTH_SHORT).show());
+            }
         });
     }
 }

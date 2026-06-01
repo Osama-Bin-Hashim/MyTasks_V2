@@ -4,6 +4,8 @@ import androidx.room.Entity;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
+import com.google.gson.annotations.SerializedName;
+
 /**
  * User entity focused on identity.
  * Roles are determined dynamically by Project/Task relationships.
@@ -11,7 +13,8 @@ import androidx.room.PrimaryKey;
 @Entity(tableName = "users",
         indices = {@Index(value = {"username"}, unique = true)})
 public class User {
-    @PrimaryKey(autoGenerate = true)
+    @PrimaryKey
+    @SerializedName("id")
     public int id;
 
     public String username;

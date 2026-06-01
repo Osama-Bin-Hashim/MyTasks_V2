@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.mytasks.Adapters.NoticeAdapter;
 import com.example.mytasks.AppDatabase;
 import com.example.mytasks.Notice;
+import com.example.mytasks.NoticeRepository;
 import com.example.mytasks.NotificationHelper;
 import com.example.mytasks.R;
 
@@ -26,7 +27,7 @@ public class NoticeBoardActivity extends AppCompatActivity {
     private int projectId;
     private boolean isManager;
     private NoticeAdapter noticeAdapter;
-    private AppDatabase db;
+    private NoticeRepository noticeRepository;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,7 +43,7 @@ public class NoticeBoardActivity extends AppCompatActivity {
 
         projectId = getIntent().getIntExtra("PROJECT_ID", -1);
         isManager = getIntent().getBooleanExtra("IS_MANAGER", false);
-        db = AppDatabase.getInstance(this);
+        noticeRepository = new NoticeRepository(this);
 
         updateNoticeViewTimestamp();
         setupUI();
@@ -77,11 +78,27 @@ public class NoticeBoardActivity extends AppCompatActivity {
     }
 
     private void loadNotices() {
+        noticeRepository.syncNotices(projectId, new NoticeRepository.DataSyncCallback<List<Notice>>() {
+            @Override
+            public void onSuccess(List<Notice> notices) {
+                runOnUiThread(() -> noticeAdapter.setNoticeList(notices));
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> {
+                    Toast.makeText(NoticeBoardActivity.this, "Sync Error: " + error + ". Showing cached notices.", Toast.LENGTH_SHORT).show();
+                    fetchLocalNotices();
+                });
+            }
+        });
+    }
+
+    private void fetchLocalNotices() {
+        AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
-            List<Notice> notices = db.noticeDao().getNoticesByProject(projectId);
-            runOnUiThread(() -> {
-                noticeAdapter.setNoticeList(notices);
-            });
+            List<Notice> local = db.noticeDao().getNoticesByProject(projectId);
+            runOnUiThread(() -> noticeAdapter.setNoticeList(local));
         });
     }
 
@@ -97,17 +114,23 @@ public class NoticeBoardActivity extends AppCompatActivity {
             return;
         }
 
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            Notice notice = new Notice(title, content, System.currentTimeMillis(), projectId);
-            db.noticeDao().insertNotice(notice);
-            
-            runOnUiThread(() -> {
-                Toast.makeText(this, "Notice broadcasted successfully!", Toast.LENGTH_SHORT).show();
-                NotificationHelper.showNotification(this, "New Notice Broadcasted!", title);
-                etTitle.setText("");
-                etContent.setText("");
-                loadNotices();
-            });
+        Notice notice = new Notice(title, content, System.currentTimeMillis(), projectId);
+        noticeRepository.createNotice(notice, new NoticeRepository.DataSyncCallback<Notice>() {
+            @Override
+            public void onSuccess(Notice data) {
+                runOnUiThread(() -> {
+                    Toast.makeText(NoticeBoardActivity.this, "Notice broadcasted successfully!", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showNotification(NoticeBoardActivity.this, "New Notice Broadcasted!", title);
+                    etTitle.setText("");
+                    etContent.setText("");
+                    loadNotices();
+                });
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(NoticeBoardActivity.this, "Failed to sync notice: " + error, Toast.LENGTH_SHORT).show());
+            }
         });
     }
 }

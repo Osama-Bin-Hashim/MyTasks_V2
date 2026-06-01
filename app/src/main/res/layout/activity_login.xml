@@ -9,6 +9,19 @@
     tools:context=".LoginActivity">
 
     <TextView
+        android:id="@+id/tvConnWarningLogin"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/red"
+        android:padding="8dp"
+        android:text="⚠️ Cannot connect to server. Check IP."
+        android:textAlignment="center"
+        android:textColor="@color/white"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
         android:id="@+id/loginPageTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -18,7 +31,7 @@
         android:textColor="@color/white"
         android:textSize="30sp"
         android:layout_marginTop="@dimen/_50sdp"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvConnWarningLogin"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -75,6 +88,40 @@
                 android:textColor="@color/white"
                 android:textColorHint="@color/white"
                 android:textSize="22sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="15dp"
+                android:layout_marginTop="30dp"
+                android:layout_marginEnd="15dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <EditText
+                    android:id="@+id/etServerIp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:backgroundTint="@color/white"
+                    android:fontFamily="@font/allerta"
+                    android:hint="Server IP (e.g. 10.0.2.2)"
+                    android:inputType="text"
+                    android:textColor="@color/white"
+                    android:textColorHint="#CCCCCC"
+                    android:textSize="16sp" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnSaveIp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/button_back"
+                    android:text="Connect"
+                    android:textColor="@color/white"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
 
             <androidx.constraintlayout.widget.ConstraintLayout

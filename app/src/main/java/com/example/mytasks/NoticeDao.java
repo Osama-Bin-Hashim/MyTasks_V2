@@ -18,4 +18,7 @@ public interface NoticeDao {
 
     @Query("SELECT COUNT(*) FROM notices WHERE projectId = :projectId AND timestamp > :lastViewTimestamp")
     int getNewNoticeCount(int projectId, long lastViewTimestamp);
+
+    @Query("DELETE FROM notices WHERE projectId = :projectId")
+    void deleteNoticesByProject(int projectId);
 }

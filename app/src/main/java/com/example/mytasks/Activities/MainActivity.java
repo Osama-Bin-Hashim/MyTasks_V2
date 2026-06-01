@@ -18,6 +18,7 @@ import androidx.core.view.WindowInsetsCompat;
 import com.example.mytasks.AppDatabase;
 import com.example.mytasks.LoginActivity;
 import com.example.mytasks.Project;
+import com.example.mytasks.ProjectRepository;
 import com.example.mytasks.CreateTaskActivity;
 import com.example.mytasks.databinding.ActivityMainBinding;
 
@@ -27,6 +28,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
+    private ProjectRepository projectRepository;
     private List<Project> projectsList = new ArrayList<>();
     private int savedProjectSelectionId = -1;
     private int currentSessionUserId = -1;
@@ -38,10 +40,22 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        projectRepository = new ProjectRepository(this);
+
         // IDENTITY PERSISTENCE: Read session ID
-        SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
-        currentSessionUserId = pref.getInt("LOGGED_IN_USER_ID", -1);
-        currentSessionUsername = pref.getString("LOGGED_IN_USERNAME", "");
+        // Priority 1: Intent Extra (for fresh logins to avoid race conditions)
+        currentSessionUserId = getIntent().getIntExtra("USER_ID", -1);
+
+        // Priority 2: SharedPreferences (for normal app launches)
+        if (currentSessionUserId == -1) {
+            SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
+            currentSessionUserId = pref.getInt("LOGGED_IN_USER_ID", -1);
+            currentSessionUsername = pref.getString("LOGGED_IN_USERNAME", "");
+        } else {
+            // If we got it from Intent, we still need the username from SharedPreferences
+            SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
+            currentSessionUsername = pref.getString("LOGGED_IN_USERNAME", "");
+        }
 
         // SECURITY GUARD: Redirect to login if no valid session
         if (currentSessionUserId == -1) {
@@ -101,6 +115,7 @@ public class MainActivity extends AppCompatActivity {
             final boolean showPerformance = completedUpdates > 0;
 
             runOnUiThread(() -> {
+                binding.tvConnWarningMain.setVisibility(View.GONE);
                 binding.badgeTodo.setVisibility(showTodo ? View.VISIBLE : View.GONE);
                 binding.badgeNotices.setVisibility(showNotice ? View.VISIBLE : View.GONE);
                 binding.badgeRequests.setVisibility(showRequest ? View.VISIBLE : View.GONE);
@@ -110,13 +125,47 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadWorkspace() {
+        projectRepository.syncProjects(currentSessionUserId, new ProjectRepository.DataSyncCallback<List<Project>>() {
+            @Override
+            public void onSuccess(List<Project> allProjects) {
+                List<Project> filteredProjects = new ArrayList<>();
+
+                // PROJECT FILTERING: Managers or Enrolled Members only
+                for (Project project : allProjects) {
+                    if (currentSessionUserId == project.managerId) {
+                        filteredProjects.add(project);
+                    } else if (project.projectRoster != null && project.projectRoster.contains(currentSessionUsername)) {
+                        filteredProjects.add(project);
+                    }
+                }
+                
+                projectsList = filteredProjects;
+
+                runOnUiThread(() -> {
+                    if (projectsList.isEmpty()) {
+                        showEmptyState();
+                    } else {
+                        hideEmptyState();
+                        populateProjectSpinner();
+                    }
+                });
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Sync failed: " + error + ". Using cached data.", Toast.LENGTH_SHORT).show();
+                    fetchLocalProjects();
+                });
+            }
+        });
+    }
+
+    private void fetchLocalProjects() {
         AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
-            // Fetch All Projects
             List<Project> allProjects = db.projectDao().getAllProjects();
             List<Project> filteredProjects = new ArrayList<>();
-
-            // PROJECT FILTERING: Managers or Enrolled Members only
             for (Project project : allProjects) {
                 if (currentSessionUserId == project.managerId) {
                     filteredProjects.add(project);
@@ -124,16 +173,10 @@ public class MainActivity extends AppCompatActivity {
                     filteredProjects.add(project);
                 }
             }
-            
             projectsList = filteredProjects;
-
             runOnUiThread(() -> {
-                if (projectsList.isEmpty()) {
-                    showEmptyState();
-                } else {
-                    hideEmptyState();
-                    populateProjectSpinner();
-                }
+                if (projectsList.isEmpty()) showEmptyState();
+                else { hideEmptyState(); populateProjectSpinner(); }
             });
         });
     }

@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey;
  */
 @Entity(tableName = "tasks")
 public class Task {
-    @PrimaryKey(autoGenerate = true)
+    @PrimaryKey
     public int id;
 
     public int projectId;   // References Project.id

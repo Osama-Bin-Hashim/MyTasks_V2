@@ -20,11 +20,16 @@ import com.example.mytasks.Activities.MainActivity;
 
 public class RegisterActivity extends AppCompatActivity {
 
+    private AuthRepository authRepository;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_register);
+
+        authRepository = new AuthRepository(this);
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -85,22 +90,22 @@ public class RegisterActivity extends AppCompatActivity {
                 return;
             }
 
-            AppDatabase db = AppDatabase.getInstance(this);
-            AppDatabase.databaseWriteExecutor.execute(() -> {
-                User existingUser = db.userDao().getUserByUsername(username);
-                User existingMail = db.userDao().getUserByEmail(email);
-                if (existingUser != null) {
-                    runOnUiThread(() -> Toast.makeText(RegisterActivity.this, "Username already taken.", Toast.LENGTH_SHORT).show());
-                } else if (existingMail != null) {
-                    runOnUiThread(() -> Toast.makeText(RegisterActivity.this, "Email already exists.", Toast.LENGTH_SHORT).show());
-                } else {
-                    User newUser = new User(username, email, pwd);
-                    db.userDao().insertUser(newUser);
+            User newUser = new User(username, email, pwd);
+            authRepository.register(newUser, new AuthRepository.AuthCallback<User>() {
+                @Override
+                public void onSuccess(User user) {
                     runOnUiThread(() -> {
                         Toast.makeText(RegisterActivity.this, "Registration Successful!", Toast.LENGTH_SHORT).show();
                         Intent intent = new Intent(RegisterActivity.this, LoginActivity.class);
                         startActivity(intent);
                         finish();
+                    });
+                }
+
+                @Override
+                public void onFailure(String error) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(RegisterActivity.this, error, Toast.LENGTH_LONG).show();
                     });
                 }
             });

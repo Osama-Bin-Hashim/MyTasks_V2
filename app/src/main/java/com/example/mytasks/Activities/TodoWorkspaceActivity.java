@@ -15,6 +15,7 @@ import com.example.mytasks.AppDatabase;
 import com.example.mytasks.NotificationHelper;
 import com.example.mytasks.Project;
 import com.example.mytasks.Task;
+import com.example.mytasks.TaskRepository;
 import com.example.mytasks.databinding.ActivityTodoWorkspaceBinding;
 
 import java.util.List;
@@ -23,6 +24,7 @@ public class TodoWorkspaceActivity extends AppCompatActivity implements TaskAdap
 
     private ActivityTodoWorkspaceBinding binding;
     private TaskAdapter adapter;
+    private TaskRepository taskRepository;
     private int projectId;
     private boolean isManager;
     private String currentUsername = "";
@@ -43,6 +45,8 @@ public class TodoWorkspaceActivity extends AppCompatActivity implements TaskAdap
         projectId = getIntent().getIntExtra("PROJECT_ID", -1);
         isManager = getIntent().getBooleanExtra("IS_MANAGER", false);
         currentUsername = getIntent().getStringExtra("LOGGED_IN_USERNAME");
+
+        taskRepository = new TaskRepository(this);
         
         if (!isManager) {
             markTasksAsRead();
@@ -59,18 +63,28 @@ public class TodoWorkspaceActivity extends AppCompatActivity implements TaskAdap
     }
 
     private void loadInitialData() {
+        taskRepository.syncTasks(projectId, new TaskRepository.DataSyncCallback<List<Task>>() {
+            @Override
+            public void onSuccess(List<Task> tasks) {
+                runOnUiThread(() -> setupRecyclerView(tasks));
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> {
+                    Toast.makeText(TodoWorkspaceActivity.this, "Sync failed: " + error + ". Showing cached data.", Toast.LENGTH_LONG).show();
+                    // Local fallback already handled by Repository logic or we can trigger it here
+                    fetchLocalData();
+                });
+            }
+        });
+    }
+
+    private void fetchLocalData() {
         AppDatabase db = AppDatabase.getInstance(this);
         AppDatabase.databaseWriteExecutor.execute(() -> {
-            // 1. Get Project Context
-            Project project = db.projectDao().getProjectById(projectId);
-            if (project == null) return;
-
-            // 2. Load Tasks
-            List<Task> tasks = db.taskDao().getTasksByProjectSorted(projectId);
-
-            runOnUiThread(() -> {
-                setupRecyclerView(tasks);
-            });
+            List<Task> localTasks = db.taskDao().getTasksByProjectSorted(projectId);
+            runOnUiThread(() -> setupRecyclerView(localTasks));
         });
     }
 
@@ -83,22 +97,25 @@ public class TodoWorkspaceActivity extends AppCompatActivity implements TaskAdap
 
     @Override
     public void onMarkDone(Task task) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            task.status = "DONE";
-            // Mocking execution metrics: 80% of limit
-            task.timeTakenMillis = (long) (task.timeLimitMillis * 0.8);
-            
-            db.taskDao().updateTask(task);
+        task.status = "DONE";
+        // Mocking execution metrics: 80% of limit
+        task.timeTakenMillis = (long) (task.timeLimitMillis * 0.8);
 
-            // Refresh list
-            List<Task> updatedTasks = db.taskDao().getTasksByProjectSorted(projectId);
-            runOnUiThread(() -> {
-                adapter.setTasks(updatedTasks);
-                Toast.makeText(this, "Task marked as DONE", Toast.LENGTH_SHORT).show();
-                NotificationHelper.showNotification(this, "Task Completed!", 
-                    currentUsername + " finished: " + task.title);
-            });
+        taskRepository.updateTask(task, new TaskRepository.DataSyncCallback<Task>() {
+            @Override
+            public void onSuccess(Task updatedTask) {
+                loadInitialData();
+                runOnUiThread(() -> {
+                    Toast.makeText(TodoWorkspaceActivity.this, "Task marked as DONE", Toast.LENGTH_SHORT).show();
+                    NotificationHelper.showNotification(TodoWorkspaceActivity.this, "Task Completed!", 
+                        currentUsername + " finished: " + updatedTask.title);
+                });
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(TodoWorkspaceActivity.this, "Failed to sync update: " + error, Toast.LENGTH_SHORT).show());
+            }
         });
     }
 }
