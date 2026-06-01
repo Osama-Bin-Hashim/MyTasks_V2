@@ -13,11 +13,13 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.example.mytasks.Adapters.RequestsAdapter;
+import com.example.mytasks.ApiService;
 import com.example.mytasks.AppDatabase;
 import com.example.mytasks.NotificationHelper;
 import com.example.mytasks.Project;
 import com.example.mytasks.Request;
 import com.example.mytasks.RequestRepository;
+import com.example.mytasks.RetrofitClient;
 import com.example.mytasks.User;
 import com.example.mytasks.databinding.ActivityRequestsBinding;
 
@@ -27,7 +29,6 @@ import retrofit2.Response;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class RequestsActivity extends AppCompatActivity implements RequestsAdapter.OnRequestActionListener {
 
@@ -46,9 +47,12 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
         binding = ActivityRequestsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // IDENTITY PERSISTENCE
+        // IDENTITY PERSISTENCE: Read session ID with defensive fallbacks
         SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
         currentUserId = pref.getInt("LOGGED_IN_USER_ID", -1);
+        if (currentUserId == -1 || currentUserId == 0) currentUserId = pref.getInt("userId", -1);
+        if (currentUserId == -1 || currentUserId == 0) currentUserId = pref.getInt("logged_in_user_id", -1);
+        
         currentUsername = pref.getString("LOGGED_IN_USERNAME", "Unknown");
         
         isManager = getIntent().getBooleanExtra("IS_MANAGER", false);
@@ -64,15 +68,18 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
     }
 
     private void setupRecyclerView() {
+        // SAFE INITIALIZATION: Use fallback managerId if currentProject is null
+        int targetManagerId = (currentProject != null) ? currentProject.managerId : -1;
+        
+        adapter = new RequestsAdapter(isManager, currentUserId, targetManagerId, this);
+        binding.rvRequests.setLayoutManager(new LinearLayoutManager(this));
+        binding.rvRequests.setAdapter(adapter);
+
         if (currentProject == null) {
             Log.e("REQ_ERROR", "setupRecyclerView: currentProject is null! Using fallback empty states.");
             binding.tvEmptyRequests.setVisibility(View.VISIBLE);
             binding.rvRequests.setVisibility(View.GONE);
-            return;
         }
-        adapter = new RequestsAdapter(isManager, currentUserId, currentProject.managerId, this);
-        binding.rvRequests.setLayoutManager(new LinearLayoutManager(this));
-        binding.rvRequests.setAdapter(adapter);
     }
 
     private void loadProjectAndRequests() {
@@ -96,18 +103,44 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
     private void loadRequests() {
         if (currentProject == null) return;
         
-        requestRepository.syncRequests(projectId, new RequestRepository.DataSyncCallback<List<Request>>() {
+        ApiService apiService = RetrofitClient.getClient(this).create(ApiService.class);
+        SharedPreferences pref = getSharedPreferences("UserSession", MODE_PRIVATE);
+        
+        int userId = pref.getInt("LOGGED_IN_USER_ID", -1);
+        if (userId == -1 || userId == 0) userId = pref.getInt("userId", -1);
+        if (userId == -1 || userId == 0) userId = pref.getInt("logged_in_user_id", -1);
+
+        if (userId <= 0) {
+            fetchLocalRequests();
+            return;
+        }
+
+        apiService.getRequests(projectId, userId).enqueue(new Callback<List<Request>>() {
             @Override
-            public void onSuccess(List<Request> requests) {
-                binding.tvConnWarning.setVisibility(View.GONE);
-                runOnUiThread(() -> displayFilteredRequests(requests));
+            public void onResponse(Call<List<Request>> call, Response<List<Request>> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    binding.tvConnWarning.setVisibility(View.GONE);
+                    
+                    // UI UPDATE FIRST: Ensure items are visible before sync
+                    displayFilteredRequests(response.body());
+                    
+                    // Atomic Background Sync to Room
+                    AppDatabase.databaseWriteExecutor.execute(() -> {
+                        AppDatabase db = AppDatabase.getInstance(RequestsActivity.this);
+                        db.requestDao().syncProjectRequests(projectId, response.body());
+                    });
+                } else {
+                    runOnUiThread(() -> {
+                        binding.tvConnWarning.setVisibility(View.VISIBLE);
+                        fetchLocalRequests();
+                    });
+                }
             }
 
             @Override
-            public void onFailure(String error) {
+            public void onFailure(Call<List<Request>> call, Throwable t) {
                 runOnUiThread(() -> {
                     binding.tvConnWarning.setVisibility(View.VISIBLE);
-                    Toast.makeText(RequestsActivity.this, "Sync Error: " + error + ". Using cached data.", Toast.LENGTH_LONG).show();
                     fetchLocalRequests();
                 });
             }
@@ -122,43 +155,37 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
         });
     }
 
-    private void displayFilteredRequests(List<Request> allProjectRequests) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            List<Request> filteredRequests = new ArrayList<>();
-            if (allProjectRequests == null) return;
+    private void displayFilteredRequests(List<Request> list) {
+        if (list == null) return;
+        
+        List<Request> filteredRequests = new ArrayList<>();
+        
+        // Fallback safely to our intent value or SharedPreferences role if currentProject is loading slow
+        boolean checkIsManager = isManager; 
 
-            for (Request req : allProjectRequests) {
-                if ("DIRECT_TO_MANAGER".equals(req.type)) {
-                    if (currentUserId == req.senderId || isManager) {
-                        filteredRequests.add(req);
-                        if (!req.isRead && ((isManager && req.senderId != currentUserId) || req.receiverId == currentUserId)) {
-                            req.isRead = true;
-                            db.requestDao().updateRequest(req);
-                        }
-                    }
-                } 
-                else if ("PEER_TO_PEER".equals(req.type) || "MANAGER_TO_EMPLOYEE".equals(req.type)) {
-                    if (currentUserId == req.senderId || currentUserId == req.receiverId || isManager) {
-                        filteredRequests.add(req);
-                        if (!req.isRead && (req.receiverId == currentUserId || (isManager && req.senderId != currentUserId))) {
-                            req.isRead = true;
-                            db.requestDao().updateRequest(req);
-                        }
-                    }
+        for (Request req : list) {
+            if (req == null) continue;
+            if (req.type == null) req.type = "MESSAGE";
+
+            // REWRITTEN FILTERING LOGIC FOR ROBUSTNESS
+            if ("DIRECT_TO_MANAGER".equals(req.type) || "JOIN_PROJECT".equals(req.type)) {
+                // If I am the sender, or if I am the manager of this workspace view, or if I am the receiver, show it
+                if (currentUserId == req.senderId || checkIsManager || currentUserId == req.receiverId) {
+                    filteredRequests.add(req);
                 }
-                else {
-                    if (isManager || currentUserId == req.senderId) {
-                        filteredRequests.add(req);
-                        if (!req.isRead && isManager && req.senderId != currentUserId) {
-                            req.isRead = true;
-                            db.requestDao().updateRequest(req);
-                        }
-                    }
+            } else if ("PEER_TO_PEER".equals(req.type) || "MANAGER_TO_EMPLOYEE".equals(req.type)) {
+                // Show if I'm involved in the communication chain or if I'm the manager
+                if (currentUserId == req.senderId || currentUserId == req.receiverId || checkIsManager) {
+                    filteredRequests.add(req);
                 }
+            } else {
+                // Default visibility fallback for other message types (e.g. system messages)
+                filteredRequests.add(req);
             }
+        }
 
-            runOnUiThread(() -> {
+        runOnUiThread(() -> {
+            if (adapter != null) {
                 if (filteredRequests.isEmpty()) {
                     binding.tvEmptyRequests.setVisibility(View.VISIBLE);
                     binding.rvRequests.setVisibility(View.GONE);
@@ -167,7 +194,7 @@ public class RequestsActivity extends AppCompatActivity implements RequestsAdapt
                     binding.rvRequests.setVisibility(View.VISIBLE);
                     adapter.setRequestList(filteredRequests);
                 }
-            });
+            }
         });
     }
 

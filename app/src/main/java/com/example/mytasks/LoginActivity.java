@@ -93,6 +93,9 @@ public class LoginActivity extends AppCompatActivity {
         binding.loginBtn.setVisibility(View.GONE);
         binding.loginAcProgressBar.setVisibility(View.VISIBLE);
 
+        // FIXED: Re-instantiate to pick up fresh SERVER_IP from SharedPreferences
+        authRepository = new AuthRepository(this);
+
         authRepository.login(username, password, new AuthRepository.AuthCallback<User>() {
             @Override
             public void onSuccess(User user) {

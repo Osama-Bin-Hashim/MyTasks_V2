@@ -19,7 +19,7 @@ import com.example.mytasks.ProjectRepository;
 import com.example.mytasks.R;
 import com.example.mytasks.Task;
 import com.example.mytasks.TaskRepository;
-import com.example.mytasks.User;
+import com.example.mytasks.TaskRepository;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -226,44 +226,33 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
     }
 
     private void verifyAndAddMember(String username) {
-        AppDatabase db = AppDatabase.getInstance(this);
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            User user = db.userDao().getUserByUsername(username);
-            if (user == null) {
-                runOnUiThread(() -> Toast.makeText(this, "User does not exist!", Toast.LENGTH_SHORT).show());
-                return;
-            }
+        // 1. Bypass local Room database User table lookup checks entirely
+        com.example.mytasks.ApiService apiService = com.example.mytasks.RetrofitClient.getClient(this).create(com.example.mytasks.ApiService.class);
+        com.example.mytasks.UsernameRequest enrollmentBody = new com.example.mytasks.UsernameRequest(username);
 
-            if (activeProject != null) {
-                String currentRoster = activeProject.projectRoster;
-                if (currentRoster == null) currentRoster = "";
-                
-                if (currentRoster.contains(username)) {
-                    runOnUiThread(() -> Toast.makeText(this, "User already in roster", Toast.LENGTH_SHORT).show());
-                    return;
-                }
-
-                if (!currentRoster.isEmpty()) {
-                    currentRoster += ", ";
-                }
-                currentRoster += username;
-                activeProject.projectRoster = currentRoster;
-
-                projectRepository.updateProject(activeProject, new ProjectRepository.DataSyncCallback<Project>() {
-                    @Override
-                    public void onSuccess(Project data) {
+        // 2. Query the dedicated server endpoint using the explicit enrollment API signature
+        apiService.enrollUser(activeProjectId, enrollmentBody).enqueue(new retrofit2.Callback<com.example.mytasks.Project>() {
+            @Override
+            public void onResponse(retrofit2.Call<com.example.mytasks.Project> call, retrofit2.Response<com.example.mytasks.Project> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    // 3. Re-inject the updated Project payload returned from the server back into Room to refresh statistics instantly
+                    AppDatabase db = AppDatabase.getInstance(ManagerPerformanceActivity.this);
+                    AppDatabase.databaseWriteExecutor.execute(() -> {
+                        db.projectDao().updateProject(response.body());
                         runOnUiThread(() -> {
                             Toast.makeText(ManagerPerformanceActivity.this, username + " enrolled successfully!", Toast.LENGTH_SHORT).show();
                             ((EditText)findViewById(R.id.inputNewMemberUsername)).setText("");
                             loadProjectAnalytics(activeProjectId);
                         });
-                    }
+                    });
+                } else {
+                    runOnUiThread(() -> Toast.makeText(ManagerPerformanceActivity.this, "Enrollment failed: User not found on server database", Toast.LENGTH_SHORT).show());
+                }
+            }
 
-                    @Override
-                    public void onFailure(String error) {
-                        runOnUiThread(() -> Toast.makeText(ManagerPerformanceActivity.this, "Enrollment failed: " + error, Toast.LENGTH_SHORT).show());
-                    }
-                });
+            @Override
+            public void onFailure(retrofit2.Call<com.example.mytasks.Project> call, Throwable t) {
+                runOnUiThread(() -> Toast.makeText(ManagerPerformanceActivity.this, "Network error: " + t.getMessage(), Toast.LENGTH_SHORT).show());
             }
         });
     }

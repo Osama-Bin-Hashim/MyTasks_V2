@@ -4,6 +4,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.mytasks.R;
@@ -79,6 +80,8 @@ public class RequestsAdapter extends RecyclerView.Adapter<RequestsAdapter.Reques
         }
 
         void bind(Request request, boolean isManager, int currentUserId, int managerId, OnRequestActionListener listener) {
+            Log.d("DEBUG_REQ", "Binding Request ID: " + request.requestId + ", Sender: " + request.senderName + ", Type: " + request.type);
+
             // Null-safe defaults for fallback strings
             String sender = (request.senderName != null) ? request.senderName : "Unknown User";
             String message = (request.messageText != null) ? request.messageText : "No message content";

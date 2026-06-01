@@ -2,12 +2,14 @@ package com.example.mytasks;
 
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
+import com.google.gson.annotations.SerializedName;
 
 /**
  * Data model for user requests and internal messages.
  */
 @Entity(tableName = "requests")
 public class Request {
+    @SerializedName("requestId")
     @PrimaryKey
     public int requestId;
 

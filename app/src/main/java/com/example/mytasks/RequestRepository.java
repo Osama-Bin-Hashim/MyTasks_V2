@@ -21,7 +21,21 @@ public class RequestRepository {
     public void syncRequests(int projectId, DataSyncCallback<List<Request>> callback) {
         if (AppConfig.USE_SERVER_BACKEND) {
             android.content.SharedPreferences pref = context.getSharedPreferences("UserSession", Context.MODE_PRIVATE);
+            
+            // Try reading every common key variation used across the app
             int userId = pref.getInt("LOGGED_IN_USER_ID", -1);
+            if (userId == -1 || userId == 0) {
+                userId = pref.getInt("userId", -1);
+            }
+            if (userId == -1 || userId == 0) {
+                userId = pref.getInt("logged_in_user_id", -1);
+            }
+
+            // CRITICAL: If the ID is still invalid or 0, do not fire the network request
+            if (userId <= 0) {
+                callback.onFailure("Local Session Error: Valid User ID not found in SharedPreferences.");
+                return;
+            }
 
             apiService.getRequests(projectId, userId).enqueue(new Callback<List<Request>>() {
                 @Override

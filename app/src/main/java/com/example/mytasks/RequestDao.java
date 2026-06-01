@@ -2,14 +2,25 @@ package com.example.mytasks;
 
 import androidx.room.Dao;
 import androidx.room.Insert;
+import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
+import androidx.room.Transaction;
 import androidx.room.Update;
 import java.util.List;
 
 @Dao
 public interface RequestDao {
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertRequest(Request request);
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    void insertAll(List<Request> requests);
+
+    @Transaction
+    default void syncProjectRequests(int projectId, List<Request> requests) {
+        deleteRequestsByProject(projectId);
+        insertAll(requests);
+    }
 
     @Update
     void updateRequest(Request request);
