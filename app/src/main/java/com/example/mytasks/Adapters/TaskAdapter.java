@@ -34,6 +34,7 @@ public class TaskAdapter extends RecyclerView.Adapter<TaskAdapter.TaskViewHolder
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm a", Locale.getDefault());
 
     public interface OnTaskActionListener {
+        void onStartTask(Task task);
         void onMarkDone(Task task);
     }
 
@@ -82,7 +83,7 @@ public class TaskAdapter extends RecyclerView.Adapter<TaskAdapter.TaskViewHolder
 
     static class TaskViewHolder extends RecyclerView.ViewHolder {
         TextView title, priority, status, deadline, description, team;
-        Button btnMarkDone;
+        Button btnMarkDone, btnStartTask;
         ImageButton btnEditTask, btnDeleteTask;
 
         public TaskViewHolder(@NonNull View itemView) {
@@ -94,6 +95,7 @@ public class TaskAdapter extends RecyclerView.Adapter<TaskAdapter.TaskViewHolder
             description = itemView.findViewById(R.id.tvTaskDescriptionDisplay);
             team = itemView.findViewById(R.id.tvAssignedTeamDisplay);
             btnMarkDone = itemView.findViewById(R.id.btnMarkDone);
+            btnStartTask = itemView.findViewById(R.id.btnStartTask);
             btnEditTask = itemView.findViewById(R.id.btnEditTask);
             btnDeleteTask = itemView.findViewById(R.id.btnDeleteTask);
         }
@@ -133,11 +135,35 @@ public class TaskAdapter extends RecyclerView.Adapter<TaskAdapter.TaskViewHolder
             priority.setText(priorityText);
             priority.setBackgroundColor(priorityColor);
 
-            // Visibility for Mark Done
+            // Visibility for Action Buttons (Employee Workflow)
             if (isManager || "DONE".equals(task.status)) {
                 btnMarkDone.setVisibility(View.GONE);
+                btnStartTask.setVisibility(View.GONE);
             } else {
-                btnMarkDone.setVisibility(View.VISIBLE);
+                // Step 1 & 3: UI Addition/Shift
+                if ("PENDING".equals(task.status)) {
+                    btnStartTask.setVisibility(View.VISIBLE);
+                    btnMarkDone.setVisibility(View.GONE);
+                } else if ("IN_PROGRESS".equals(task.status)) {
+                    btnStartTask.setVisibility(View.GONE);
+                    btnMarkDone.setVisibility(View.VISIBLE);
+                } else {
+                    btnStartTask.setVisibility(View.GONE);
+                    btnMarkDone.setVisibility(View.VISIBLE);
+                }
+
+                btnStartTask.setOnClickListener(v -> {
+                    // CLICK-TIME VERIFICATION GATE
+                    android.content.SharedPreferences pref = context.getSharedPreferences("UserSession", Context.MODE_PRIVATE);
+                    String sessionUser = pref.getString("LOGGED_IN_USERNAME", "");
+                    
+                    if (task.assigneeId == null || !task.assigneeId.contains(sessionUser)) {
+                        android.widget.Toast.makeText(context, "Security Alert: You are not assigned to this task!", android.widget.Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    listener.onStartTask(task);
+                });
+
                 btnMarkDone.setOnClickListener(v -> {
                     // CLICK-TIME VERIFICATION GATE
                     android.content.SharedPreferences pref = context.getSharedPreferences("UserSession", Context.MODE_PRIVATE);

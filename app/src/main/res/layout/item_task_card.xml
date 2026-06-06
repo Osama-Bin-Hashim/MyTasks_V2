@@ -112,6 +112,20 @@
             android:textSize="@dimen/_10ssp" />
 
         <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnStartTask"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/_32sdp"
+            android:layout_gravity="end"
+            android:layout_marginTop="@dimen/_12sdp"
+            android:background="#0099CC"
+            android:paddingHorizontal="@dimen/_16sdp"
+            android:text="START TASK"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="@dimen/_12ssp"
+            android:visibility="gone" />
+
+        <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnMarkDone"
             android:layout_width="wrap_content"
             android:layout_height="@dimen/_32sdp"

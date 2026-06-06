@@ -13,17 +13,33 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.mytasks.Adapters.RosterAdapter;
 import com.example.mytasks.AppDatabase;
+import com.example.mytasks.Models.AnalyticsResponse;
 import com.example.mytasks.Models.RosterStats;
 import com.example.mytasks.Project;
 import com.example.mytasks.ProjectRepository;
 import com.example.mytasks.R;
+import com.example.mytasks.RetrofitClient;
 import com.example.mytasks.Task;
 import com.example.mytasks.TaskRepository;
-import com.example.mytasks.TaskRepository;
+import com.example.mytasks.UsernameRequest;
+import com.github.mikephil.charting.charts.BarChart;
+import com.github.mikephil.charting.charts.PieChart;
+import com.github.mikephil.charting.data.BarData;
+import com.github.mikephil.charting.data.BarDataSet;
+import com.github.mikephil.charting.data.BarEntry;
+import com.github.mikephil.charting.data.PieData;
+import com.github.mikephil.charting.data.PieDataSet;
+import com.github.mikephil.charting.data.PieEntry;
+import com.github.mikephil.charting.utils.ColorTemplate;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class ManagerPerformanceActivity extends AppCompatActivity implements RosterAdapter.OnRemoveMemberListener {
     
@@ -33,9 +49,20 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
     private ProjectRepository projectRepository;
     private TaskRepository taskRepository;
     private boolean isManager;
+    private PieChart pieChartStatus, priorityChart;
+    private BarChart barChartWorkload;
+
+    private final int[] lightBluePalette = new int[]{
+            android.graphics.Color.parseColor("#81D4FA"), // Light Blue 200
+            android.graphics.Color.parseColor("#29B6F6"), // Light Blue 400
+            android.graphics.Color.parseColor("#03A9F4"), // Light Blue 500
+            android.graphics.Color.parseColor("#0288D1"), // Light Blue 700
+            android.graphics.Color.parseColor("#01579B")  // Light Blue 900
+    };
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_manager_performance);
 
@@ -60,6 +87,10 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
         if (currentUserId != -1) {
             pref.edit().putLong("LAST_PERFORMANCE_VIEW_" + currentUserId + "_" + activeProjectId, System.currentTimeMillis()).apply();
         }
+
+        pieChartStatus = findViewById(R.id.pieChartStatus);
+        priorityChart = findViewById(R.id.priorityChart);
+        barChartWorkload = findViewById(R.id.barChartWorkload);
 
         setupRecyclerView();
         loadProjectAnalytics(activeProjectId);
@@ -139,17 +170,122 @@ public class ManagerPerformanceActivity extends AppCompatActivity implements Ros
     }
 
     private void loadProjectAnalytics(int projectId) {
-        taskRepository.syncTasks(projectId, new TaskRepository.DataSyncCallback<List<Task>>() {
+        com.example.mytasks.ApiService apiService = RetrofitClient.getClient(this).create(com.example.mytasks.ApiService.class);
+        apiService.getProjectAnalytics(projectId).enqueue(new Callback<AnalyticsResponse>() {
             @Override
-            public void onSuccess(List<Task> data) {
-                calculateAndDisplayAnalytics(projectId);
+            public void onResponse(Call<AnalyticsResponse> call, Response<AnalyticsResponse> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    AnalyticsResponse analytics = response.body();
+                    renderCharts(analytics);
+                    updateGlobalProgressUI(analytics);
+                }
+                
+                // ALWAYS fetch local Project data to update Roster List (Sync check)
+                AppDatabase db = AppDatabase.getInstance(ManagerPerformanceActivity.this);
+                AppDatabase.databaseWriteExecutor.execute(() -> {
+                    activeProject = db.projectDao().getProjectById(projectId);
+                    calculateAndDisplayAnalytics(projectId); // Still runs to populate Roster List
+                });
             }
 
             @Override
-            public void onFailure(String error) {
-                // Fallback to local data on sync failure
+            public void onFailure(Call<AnalyticsResponse> call, Throwable t) {
                 calculateAndDisplayAnalytics(projectId);
             }
+        });
+    }
+
+    private void updateGlobalProgressUI(AnalyticsResponse analytics) {
+        runOnUiThread(() -> {
+            int total = analytics.totalTasks;
+            int done = 0;
+            if (analytics.statusDistribution != null && analytics.statusDistribution.get("DONE") != null) {
+                done = analytics.statusDistribution.get("DONE");
+            }
+            
+            int progress = (total > 0) ? (done * 100) / total : 0;
+            
+            TextView tvRate = findViewById(R.id.tvGlobalProgress);
+            ProgressBar pb = findViewById(R.id.pbGlobalProgress);
+            
+            tvRate.setText(progress + "%");
+            pb.setProgress(progress);
+        });
+    }
+
+    private void renderCharts(AnalyticsResponse analytics) {
+        runOnUiThread(() -> {
+            // 1. PieChart: Status Distribution
+            List<PieEntry> statusEntries = new ArrayList<>();
+            if (analytics.statusDistribution != null) {
+                for (Map.Entry<String, Integer> entry : analytics.statusDistribution.entrySet()) {
+                    statusEntries.add(new PieEntry(entry.getValue(), entry.getKey()));
+                }
+            }
+
+            PieDataSet statusDataSet = new PieDataSet(statusEntries, "");
+            statusDataSet.setColors(lightBluePalette);
+            statusDataSet.setValueTextSize(12f);
+            statusDataSet.setValueTextColor(android.graphics.Color.WHITE);
+
+            PieData statusData = new PieData(statusDataSet);
+            pieChartStatus.setData(statusData);
+            pieChartStatus.getDescription().setEnabled(false);
+            pieChartStatus.getLegend().setForm(com.github.mikephil.charting.components.Legend.LegendForm.CIRCLE);
+            pieChartStatus.setHoleColor(android.graphics.Color.TRANSPARENT);
+            pieChartStatus.setCenterText("Status");
+            pieChartStatus.animateY(1000, com.github.mikephil.charting.animation.Easing.EaseInOutCubic);
+            pieChartStatus.invalidate();
+
+            // 2. PieChart: Priority Breakdown
+            List<PieEntry> priorityEntries = new ArrayList<>();
+            if (analytics.priorityBreakdown != null) {
+                for (Map.Entry<String, Integer> entry : analytics.priorityBreakdown.entrySet()) {
+                    String label = "P" + entry.getKey();
+                    priorityEntries.add(new PieEntry(entry.getValue(), label));
+                }
+            }
+
+            PieDataSet priorityDataSet = new PieDataSet(priorityEntries, "");
+            priorityDataSet.setColors(lightBluePalette);
+            priorityDataSet.setValueTextSize(12f);
+            priorityDataSet.setValueTextColor(android.graphics.Color.WHITE);
+
+            PieData priorityData = new PieData(priorityDataSet);
+            priorityChart.setData(priorityData);
+            priorityChart.getDescription().setEnabled(false);
+            priorityChart.getLegend().setForm(com.github.mikephil.charting.components.Legend.LegendForm.CIRCLE);
+            priorityChart.setHoleColor(android.graphics.Color.TRANSPARENT);
+            priorityChart.setCenterText("Priority");
+            priorityChart.animateY(1000, com.github.mikephil.charting.animation.Easing.EaseInOutCubic);
+            priorityChart.invalidate();
+
+            // 3. BarChart: Employee Workload
+            List<BarEntry> workloadEntries = new ArrayList<>();
+            final List<String> labels = new ArrayList<>();
+            int index = 0;
+
+            if (analytics.employeeWorkload != null) {
+                for (Map.Entry<String, AnalyticsResponse.EmployeeStats> entry : analytics.employeeWorkload.entrySet()) {
+                    workloadEntries.add(new BarEntry(index, entry.getValue().totalTasks));
+                    labels.add(entry.getKey());
+                    index++;
+                }
+            }
+
+            BarDataSet workloadDataSet = new BarDataSet(workloadEntries, "Tasks Assigned");
+            workloadDataSet.setColors(lightBluePalette);
+            workloadDataSet.setValueTextSize(10f);
+            workloadDataSet.setValueTextColor(android.graphics.Color.DKGRAY);
+
+            BarData workloadData = new BarData(workloadDataSet);
+            barChartWorkload.setData(workloadData);
+            barChartWorkload.getDescription().setEnabled(false);
+            barChartWorkload.getXAxis().setValueFormatter(new com.github.mikephil.charting.formatter.IndexAxisValueFormatter(labels));
+            barChartWorkload.getXAxis().setGranularity(1f);
+            barChartWorkload.getXAxis().setPosition(com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM);
+            barChartWorkload.animateY(1000, com.github.mikephil.charting.animation.Easing.EaseInOutCubic);
+            barChartWorkload.invalidate();
         });
     }
 

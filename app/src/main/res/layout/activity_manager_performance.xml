@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F6FA"
+    android:background="#F5F7FA"
     android:fitsSystemWindows="true">
 
     <!-- DYNAMIC HEADER: User Greeting -->
@@ -21,90 +21,174 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- HEADER: Project Progress -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/globalStatsCard"
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/dashboardScrollView"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="@dimen/_16sdp"
-        app:cardBackgroundColor="#FFFFFF"
-        app:cardCornerRadius="@dimen/_16sdp"
-        app:cardElevation="@dimen/_4sdp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottomFormContainer"
         app:layout_constraintTop_toBottomOf="@id/tvDashboardTitle">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="@dimen/_20sdp">
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/tvMgrPerfTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Project Analytics"
-                android:textColor="#808080"
-                android:textSize="@dimen/_12ssp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvGlobalProgress"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/_8sdp"
-                android:text="0%"
-                android:textColor="#333333"
-                android:textSize="@dimen/_32ssp"
-                android:textStyle="bold" />
-
-            <ProgressBar
-                android:id="@+id/pbGlobalProgress"
-                style="?android:attr/progressBarStyleHorizontal"
+            <!-- HEADER: Project Progress -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/globalStatsCard"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/_8sdp"
-                android:layout_marginTop="@dimen/_12sdp"
-                android:max="100"
-                android:progress="0"
-                android:progressDrawable="@drawable/custom_progress_bar" />
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/_16sdp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:cardCornerRadius="@dimen/_16sdp"
+                app:cardElevation="@dimen/_4sdp">
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="@dimen/_20sdp">
+
+                    <TextView
+                        android:id="@+id/tvMgrPerfTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Global Progress"
+                        android:textColor="#808080"
+                        android:textSize="@dimen/_12ssp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvGlobalProgress"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/_8sdp"
+                        android:text="0%"
+                        android:textColor="#333333"
+                        android:textSize="@dimen/_28ssp"
+                        android:textStyle="bold" />
+
+                    <ProgressBar
+                        android:id="@+id/pbGlobalProgress"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/_8sdp"
+                        android:layout_marginTop="@dimen/_12sdp"
+                        android:max="100"
+                        android:progress="0"
+                        android:progressDrawable="@drawable/custom_progress_bar" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- SECTION: Status Distribution -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/_16sdp"
+                android:text="Status Distribution"
+                android:textColor="#333333"
+                android:textSize="@dimen/_14ssp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/_16sdp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:cardCornerRadius="@dimen/_16sdp"
+                app:cardElevation="@dimen/_4sdp">
+
+                <com.github.mikephil.charting.charts.PieChart
+                    android:id="@+id/pieChartStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:padding="@dimen/_12sdp" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- SECTION: Priority Breakdown -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/_16sdp"
+                android:text="Priority Breakdown"
+                android:textColor="#333333"
+                android:textSize="@dimen/_14ssp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/_16sdp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:cardCornerRadius="@dimen/_16sdp"
+                app:cardElevation="@dimen/_4sdp">
+
+                <com.github.mikephil.charting.charts.PieChart
+                    android:id="@+id/priorityChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:padding="@dimen/_12sdp" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- SECTION: Employee Workload -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/_16sdp"
+                android:text="Employee Workload"
+                android:textColor="#333333"
+                android:textSize="@dimen/_14ssp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/workloadCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/_16sdp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:cardCornerRadius="@dimen/_16sdp"
+                app:cardElevation="@dimen/_4sdp">
+
+                <com.github.mikephil.charting.charts.BarChart
+                    android:id="@+id/barChartWorkload"
+                    android:layout_width="match_parent"
+                    android:layout_height="250dp"
+                    android:padding="@dimen/_12sdp" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- SECTION: Team Performance -->
+            <TextView
+                android:id="@+id/tvRosterTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/_16sdp"
+                android:text="Team Performance"
+                android:textColor="#333333"
+                android:textSize="@dimen/_14ssp"
+                android:textStyle="bold" />
+
+            <!-- ROSTER LIST -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvRosterPerformance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/_8sdp"
+                android:layout_marginTop="@dimen/_8sdp"
+                android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
+                android:paddingBottom="@dimen/_16sdp"
+                tools:listitem="@layout/item_roster_performance" />
+
+            <!-- Hidden legacy view for code compatibility -->
             <TextView
                 android:id="@+id/tvTaskSummary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/_12sdp"
-                android:text="Active: 0 | Closed: 0"
-                android:textColor="#666666"
-                android:textSize="@dimen/_12ssp" />
+                android:visibility="gone" />
+
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <!-- SECTION TITLE: Team Performance -->
-    <TextView
-        android:id="@+id/tvTeamTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/_16sdp"
-        android:layout_marginTop="@dimen/_16sdp"
-        android:text="Team Performance"
-        android:textColor="#333333"
-        android:textSize="@dimen/_14ssp"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/globalStatsCard" />
-
-    <!-- ROSTER LIST -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvRosterPerformance"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginHorizontal="@dimen/_8sdp"
-        android:layout_marginTop="@dimen/_8sdp"
-        android:clipToPadding="false"
-        android:paddingBottom="@dimen/_16sdp"
-        app:layout_constraintBottom_toTopOf="@+id/bottomFormContainer"
-        app:layout_constraintTop_toBottomOf="@id/tvTeamTitle"
-        tools:listitem="@layout/item_roster_performance" />
+    </androidx.core.widget.NestedScrollView>
 
     <!-- PINNED ACTION SHEET CONTAINER -->
     <LinearLayout

@@ -96,6 +96,25 @@ public class TodoWorkspaceActivity extends AppCompatActivity implements TaskAdap
     }
 
     @Override
+    public void onStartTask(Task task) {
+        task.status = "IN_PROGRESS";
+        
+        taskRepository.updateTask(task, new TaskRepository.DataSyncCallback<Task>() {
+            @Override
+            public void onSuccess(Task updatedTask) {
+                // UI SHIFT & Sync: Instant refresh via loadInitialData()
+                loadInitialData();
+                runOnUiThread(() -> Toast.makeText(TodoWorkspaceActivity.this, "Task is now IN PROGRESS", Toast.LENGTH_SHORT).show());
+            }
+
+            @Override
+            public void onFailure(String error) {
+                runOnUiThread(() -> Toast.makeText(TodoWorkspaceActivity.this, "Failed to start task: " + error, Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    @Override
     public void onMarkDone(Task task) {
         task.status = "DONE";
         // Mocking execution metrics: 80% of limit

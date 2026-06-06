@@ -1,5 +1,6 @@
 package com.example.mytasks;
 
+import com.example.mytasks.Models.AnalyticsResponse;
 import java.util.List;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
@@ -34,6 +35,9 @@ public interface ApiService {
 
     @POST("/api/projects/{proj_id}/remove")
     Call<Project> removeUser(@Path("proj_id") int projId, @Body UsernameRequest body);
+
+    @GET("/api/analytics/{projectId}")
+    Call<AnalyticsResponse> getProjectAnalytics(@Path("projectId") int projectId);
 
     @PUT("/api/projects/{projectId}")
     Call<Project> updateProject(@Path("projectId") int projectId, @Body Project project);
