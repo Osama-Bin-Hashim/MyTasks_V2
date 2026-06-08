@@ -72,9 +72,22 @@ public class RegisterActivity extends AppCompatActivity {
                 Toast.makeText(this, "Email is required", Toast.LENGTH_SHORT).show();
                 return;
             }
+
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                emailInput.setError("Please enter a valid email address");
+//                Toast.makeText(this, "Valid email is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             if (pwd.isEmpty()){
                 password.setError("Please enter the password");
                 Toast.makeText(this, "Password is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (pwd.length() < 4) {
+                password.setError("Password must be at least 4 characters");
+//                Toast.makeText(this, "Password is too short", Toast.LENGTH_SHORT).show();
                 return;
             }
 
